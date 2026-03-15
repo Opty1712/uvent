@@ -3,6 +3,9 @@ const htmlMinify = require("gulp-htmlmin");
 const jsMinify = require("gulp-uglify");
 const imgagemin = require("gulp-imagemin");
 const { sync } = require("del");
+const fs = require("fs/promises");
+const fsSync = require("fs");
+const path = require("path");
 
 const run = require("gulp-run");
 
@@ -12,8 +15,7 @@ const gcssmq = require("gulp-group-css-media-queries");
 const gulpSass = require("gulp-sass");
 const sass = require("sass");
 const concatCss = require("gulp-concat-css");
-const crittr = require("gulp-crittr");
-const timeForCriticalCSS = 30000;
+const generateCriticalCss = require("./scripts/generateCriticalCss");
 
 const browserify = require("browserify");
 const source = require("vinyl-source-stream");
@@ -22,7 +24,6 @@ const sourcemaps = require("gulp-sourcemaps");
 const log = require("gulplog");
 
 const ts = require("gulp-typescript");
-const timeForCriticalTS = 30000;
 const tsify = require("tsify");
 
 const browserSync = require("browser-sync");
@@ -80,31 +81,44 @@ const processTS = () => {
     .pipe(gulp.dest(`${distDir}${jsDir}`));
 };
 
-const processCriticalTS = async () => {
-  setTimeout(() => {
-    return gulp
-      .src(`${tsCriticalFiles}`)
-      .pipe(sourcemaps.init({ loadMaps: true }))
-      .pipe(
-        ts({
-          noImplicitAny: true,
-          module: "amd",
-          moduleResolution: "node",
-          outFile: `critical.js`,
-        })
-      )
-      .pipe(jsMinify())
-      .on("error", log.error)
-      .pipe(sourcemaps.write("./"))
-      .pipe(gulp.dest(`${distDir}${jsDir}critical/`));
-  }, timeForCriticalTS);
+const processCriticalTS = () => {
+  return gulp
+    .src(`${tsCriticalFiles}`)
+    .pipe(sourcemaps.init({ loadMaps: true }))
+    .pipe(
+      ts({
+        noImplicitAny: true,
+        module: "amd",
+        moduleResolution: "node",
+        outFile: `critical.js`,
+      })
+    )
+    .pipe(jsMinify())
+    .on("error", log.error)
+    .pipe(sourcemaps.write("./"))
+    .pipe(gulp.dest(`${distDir}${jsDir}critical/`));
 };
 
+const imageminBinaryPaths = [
+  "node_modules/mozjpeg/vendor/cjpeg",
+  "node_modules/optipng-bin/vendor/optipng",
+  "node_modules/gifsicle/vendor/gifsicle",
+];
+
 const processIMG = () => {
-  return gulp
-    .src(imgFiles)
-    .pipe(imgagemin())
-    .pipe(gulp.dest(`${distDir}${imgDir}`));
+  const imageStream = gulp.src(imgFiles);
+  const hasImageminBinaries = imageminBinaryPaths.every((binaryPath) =>
+    fsSync.existsSync(binaryPath)
+  );
+
+  if (!hasImageminBinaries) {
+    log.warn(
+      "Imagemin binaries are unavailable. Copying images without optimization."
+    );
+    return imageStream.pipe(gulp.dest(`${distDir}${imgDir}`));
+  }
+
+  return imageStream.pipe(imgagemin()).pipe(gulp.dest(`${distDir}${imgDir}`));
 };
 
 const gulpSassWorker = gulpSass(sass);
@@ -122,19 +136,25 @@ const processStyle = () => {
 };
 
 const processCriticalCSS = async () => {
-  setTimeout(() => {
-    return gulp
-      .src("public/styles/style.css")
-      .pipe(
-        crittr({
-          out: "critical.css",
-          urls: ["https://uvent.ru/"],
-          width: 1400,
-          height: 1200,
-        })
-      )
-      .pipe(gulp.dest("public/styles/stylescritical.css"));
-  }, timeForCriticalCSS);
+  const stylePath = path.join(distDir, stylesDir, "style.css");
+  const htmlPath = path.join(distDir, "index.html");
+  const criticalPath = path.join(distDir, stylesDir, "stylescritical.css");
+
+  try {
+    await generateCriticalCss({
+      htmlPath,
+      stylePath,
+      criticalPath,
+      width: 1400,
+      height: 1200,
+    });
+  } catch (error) {
+    log.warn(
+      "Critical CSS generation failed. Falling back to full stylesheet."
+    );
+    log.warn(error);
+    await fs.copyFile(stylePath, criticalPath);
+  }
 };
 
 const clean = async () => {
