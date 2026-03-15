@@ -54,6 +54,9 @@
     "dev": "gulp",
     "build": "gulp build"
   },
+  "engines": {
+    "node": "22.x"
+  },
   "editor.formatOnSave": true,
   "[javascript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"

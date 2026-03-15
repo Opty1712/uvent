@@ -128,7 +128,7 @@ const processCriticalCSS = async () => {
       .pipe(
         crittr({
           out: "critical.css",
-          urls: ["https://uvent-aemorozov.vercel.app/"],
+          urls: ["https://uvent.ru/"],
           width: 1400,
           height: 1200,
         })
